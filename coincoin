@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Gym Duck Tracker</title>
+    
+    <!-- Styles (Tailwind CSS) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Animation pour les notifications */
+        @keyframes bounceIn {
+            0% { transform: scale(0.1); opacity: 0; }
+            60% { transform: scale(1.2); opacity: 1; }
+            100% { transform: scale(1); }
+        }
+        .animate-bounce-in { animation: bounceIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55); }
+        body { -webkit-tap-highlight-color: transparent; }
+    </style>
+
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    
+    <!-- Babel (Pour comprendre le code React/JSX dans le navigateur) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Chargement des modules Firebase et mapping vers l'objet global window -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+        import { 
+            getFirestore, collection, doc, setDoc, addDoc, onSnapshot, updateDoc, 
+            increment, serverTimestamp, Timestamp, query, where, getDocs, getDoc, 
+            deleteDoc, orderBy 
+        } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+
+        // On attache tout à window pour que le script Babel puisse s'en servir
+        window.firebaseModules = {
+            initializeApp, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken,
+            getFirestore, collection, doc, setDoc, addDoc, onSnapshot, updateDoc, 
+            increment, serverTimestamp, Timestamp, query, where, getDocs, getDoc, 
+            deleteDoc, orderBy
+        };
+        
+        // Signal que Firebase est prêt
+        window.dispatchEvent(new Event('firebase-ready'));
+    </script>
+</head>
+<body class="bg-gray-50 text-gray-800">
+    <div id="root"></div>
+
+    <!-- CODE DE L'APPLICATION -->
+    <script type="text/babel">
+        // Attendre que les modules Firebase soient chargés
+        const waitForFirebase = () => new Promise(resolve => {
+            if (window.firebaseModules) resolve();
+            else window.addEventListener('firebase-ready', resolve);
+        });
+
+        // --- ICONES LUCIDE (Version SVG Inline pour éviter les dépendances externes complexes) ---
+        const Icon = ({ path, size = 24, className = "", color = "currentColor" }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                <g dangerouslySetInnerHTML={{ __html: path }} />
+            </svg>
+        );
+
+        // Map des icônes utilisées
+        const Icons = {
+            Camera: (p) => <Icon {...p} path='<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/>' />,
+            ShoppingBag: (p) => <Icon {...p} path='<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>' />,
+            Trophy: (p) => <Icon {...p} path='<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>' />,
+            Activity: (p) => <Icon {...p} path='<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>' />,
+            AlertTriangle: (p) => <Icon {...p} path='<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>' />,
+            User: (p) => <Icon {...p} path='<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>' />,
+            LogOut: (p) => <Icon {...p} path='<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>' />,
+            CheckCircle: (p) => <Icon {...p} path='<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>' />,
+            XCircle: (p) => <Icon {...p} path='<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>' />,
+            Clock: (p) => <Icon {...p} path='<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>' />,
+            Trash2: (p) => <Icon {...p} path='<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>' />,
+            Loader: (p) => <Icon {...p} path='<path d="M21 12a9 9 0 1 1-6.219-8.56"/>' />,
+            Info: (p) => <Icon {...p} path='<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>' />,
+            Package: (p) => <Icon {...p} path='<path d="m16.5 9.4-9-5.19"/><path d="m21 16-9 5.19-9-5.19"/><path d="m3.45 11.7 9 5.2"/><path d="M12 3v10.3"/><path d="M12 3 21 8"/><path d="M12 21 3.45 16.5"/><path d="M12 21v-7.6"/><path d="M2.37 7.6 12 2.6l9.63 5"/><path d="m7.5 14.6 9-5.19"/>' />,
+            Plus: (p) => <Icon {...p} path='<path d="M5 12h14"/><path d="M12 5v14"/>' />,
+            Shirt: (p) => <Icon {...p} path='<path d="M20.38 3.46 16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"/>' />,
+            Coffee: (p) => <Icon {...p} path='<path d="M17 8h1a4 4 0 1 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/><line x1="6" x2="6" y1="1" y2="4"/><line x1="10" x2="10" y1="1" y2="4"/><line x1="14" x2="14" y1="1" y2="4"/>' />,
+            Dumbbell: (p) => <Icon {...p} path='<path d="m6.5 6.5 11 11"/><path d="m21 21-1-1"/><path d="m3 3 1 1"/><path d="m18 22 4-4"/><path d="m2 6 4-4"/><path d="m3 10 7-7"/><path d="m14 21 7-7"/>' />,
+            Gift: (p) => <Icon {...p} path='<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5A4.8 8 0 0 1 12 8a4.8 8 0 0 1 4.5-5 2.5 2.5 0 0 1 0 5"/>' />,
+            Tag: (p) => <Icon {...p} path='<path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/><path d="M7 7h.01"/>' />,
+            TrendingUp: (p) => <Icon {...p} path='<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>' />,
+            Calendar: (p) => <Icon {...p} path='<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>' />,
+            Users: (p) => <Icon {...p} path='<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>' />,
+            Edit2: (p) => <Icon {...p} path='<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>' />
+        };
+
+        const Main = () => {
+            const { useState, useEffect, useRef, useMemo } = React;
+            
+            // --- CONFIGURATION ---
+            // ===============================================================
+            // REMPLACEZ LES VALEURS CI-DESSOUS PAR VOS CLÉS FIREBASE
+            // ===============================================================
+            const firebaseConfig = {
+                apiKey: "VOTRE_API_KEY_ICI",
+                authDomain: "VOTRE_PROJET.firebaseapp.com",
+                projectId: "VOTRE_PROJET",
+                storageBucket: "VOTRE_PROJET.appspot.com",
+                messagingSenderId: "...",
+                appId: "..."
+            };
+            const appId = 'gym-duck-tracker-v1';
+            // ===============================================================
+
+            // États globaux pour Firebase
+            const [fb, setFb] = useState(null);
+            const [services, setServices] = useState(null);
+
+            // Initialisation Firebase
+            useEffect(() => {
+                waitForFirebase().then(() => {
+                    const mods = window.firebaseModules;
+                    try {
+                        // On vérifie si une app existe déjà pour éviter les doublons en dev
+                        let app;
+                        try { app = mods.initializeApp(firebaseConfig); } 
+                        catch(e) { /* App déjà init */ }
+                        
+                        const auth = mods.getAuth();
+                        const db = mods.getFirestore();
+                        
+                        setServices({ auth, db, mods });
+                        setFb(true);
+                    } catch (e) {
+                        console.error("Erreur config Firebase (Avez-vous remplacé les clés ?)", e);
+                        alert("Erreur de configuration Firebase. Vérifiez le fichier index.html.");
+                    }
+                });
+            }, []);
+
+            if (!fb) return <div className="min-h-screen bg-yellow-50 flex items-center justify-center text-yellow-600 font-bold animate-pulse">Chargement de la salle...</div>;
+
+            return <App services={services} appId={appId} />;
+        };
+
+        // --- COMPOSANT APP PRINCIPAL ---
+        const App = ({ services, appId }) => {
+            const { useState, useEffect, useRef } = React;
+            const { auth, db, mods } = services;
+            const { 
+                signInAnonymously, onAuthStateChanged, 
+                collection, doc, setDoc, addDoc, onSnapshot, updateDoc, 
+                increment, serverTimestamp, query, where, getDocs, getDoc, 
+                deleteDoc 
+            } = mods;
+
+            // Etats de l'application
+            const [user, setUser] = useState(null);
+            const [username, setUsername] = useState('');
+            const [userData, setUserData] = useState(null);
+            const [rewards, setRewards] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [activeTab, setActiveTab] = useState('home'); 
+            const [photoPreview, setPhotoPreview] = useState(null);
+            const [isDaddyDuck, setIsDaddyDuck] = useState(false);
+            
+            // Données Admin & Suivi
+            const [pendingValidations, setPendingValidations] = useState([]);
+            const [pendingDeliveries, setPendingDeliveries] = useState([]); 
+            const [myPurchases, setMyPurchases] = useState([]); 
+
+            const [isCompressing, setIsCompressing] = useState(false);
+            const [isSending, setIsSending] = useState(false);
+            const [adminError, setAdminError] = useState(null);
+            
+            const [notification, setNotification] = useState(null); 
+            const [processingId, setProcessingId] = useState(null); 
+            const fileInputRef = useRef(null);
+
+            // État pour la sélection d'avatar
+            const [showAvatarSelector, setShowAvatarSelector] = useState(false);
+
+            // --- CONSTANTES ---
+            const REWARD_ICONS = {
+                'gift': <Icons.Gift size={24} />,
+                'shirt': <Icons.Shirt size={24} />,
+                'coffee': <Icons.Coffee size={24} />,
+                'dumbbell': <Icons.Dumbbell size={24} />,
+                'tag': <Icons.Tag size={24} />,
+                'package': <Icons.Package size={24} />
+            };
+
+            const REWARD_OPTIONS = [
+                { value: 'gift', label: 'Cadeau' },
+                { value: 'shirt', label: 'T-shirt/Vêtement' },
+                { value: 'coffee', label: 'Shaker/Boisson' },
+                { value: 'dumbbell', label: 'Matériel' },
+                { value: 'tag', label: 'Autre' }
+            ];
+
+            const EXERCISES_LIST = [
+                'Développé Couché', 'Squat', 'Soulevé de Terre',
+                'Presse Militaire', 'Traction (Lest)', 'Dips (Lest)'
+            ];
+
+            // --- AVATARS ---
+            const DUCK_VARIANTS = {
+                'classic': { name: 'Le Coin-mun', color: '#FACC15', item: null },
+                'muscle': { name: 'Le Coin-Coin Musclé', color: '#FACC15', item: 'headband', eye: 'angry' },
+                'secret': { name: 'Le Coin-fidentiel', color: '#FACC15', item: 'glasses', eye: 'normal' },
+                'music': { name: 'Le Coin-positeur', color: '#FACC15', item: 'piano', eye: 'normal' },
+                'napoleon': { name: 'Le Coin-quérant', color: '#FACC15', item: 'bicorne', eye: 'determined' },
+                'crazy': { name: 'Coin-plètement à l\'ouest', color: '#FACC15', item: 'swirl', eye: 'spiral' },
+                'wizard': { name: 'Le Coin-jurateur', color: '#A855F7', item: 'hat', eye: 'normal' },
+                'devil': { name: 'Le Coin-fernal', color: '#EF4444', item: 'horns', eye: 'angry' },
+                'cointreau': { name: 'Le Coin-treau', color: '#FACC15', item: 'bottle', eye: 'drunk' },
+                'coince': { name: 'Le Coin-cé', color: '#FACC15', item: 'box', eye: 'worry' },
+                'coinche': { name: 'Le Coin-che', color: '#FACC15', item: 'cards', eye: 'suspicious' },
+                'coincidence': { name: 'Le Coin-cidence', color: '#FACC15', item: null, eye: 'surprised' },
+                'bitcoin': { name: 'Le Bit-coin', color: '#FACC15', item: 'money', eye: 'dollar' },
+                'recoin': { name: 'Le Re-coin', color: '#CA8A04', item: 'hole', eye: 'normal' },
+                'coinfeur': { name: 'Le Coin-feur', color: '#FACC15', item: 'wig', eye: 'fabulous' },
+                'coinplexe': { name: 'Le Coin-plexé', color: '#EF4444', item: 'sweat', eye: 'shy' },
+                'consterne': { name: 'Le Coin-sterné', color: '#FACC15', item: 'fist', eye: 'yell' },
+                'conflit': { name: 'Le Coin-flit', color: '#FACC15', item: 'knife', eye: 'angry' },
+                'concentration': { name: 'Le Coin-centration', color: '#FACC15', item: 'book', eye: 'reading' },
+                'consciencieux': { name: 'Le Coin-sciencieux', color: '#FACC15', item: 'ruler', eye: 'normal' },
+                'confiance': { name: 'Le Coin-fiance absolue', color: '#FACC15', item: 'moto', eye: 'cool' },
+                'confine': { name: 'Le Coin-finé', color: '#FACC15', item: 'house', eye: 'bored' },
+                'nature': { name: 'Le Coin-necté nature', color: '#FACC15', item: 'tree', eye: 'peace' },
+                'conchita': { name: 'Le Coin-chita', color: '#FACC15', item: 'dress', eye: 'lashes' },
+                'conjuration': { name: 'Le Coin-jurations', color: '#A855F7', item: 'wand_smoke', eye: 'magic' },
+            };
+
+            const DuckAvatar = ({ id = 'classic', size = 40 }) => {
+                const variant = DUCK_VARIANTS[id] || DUCK_VARIANTS['classic'];
+                const color = variant.color;
+                return (
+                    <svg width={size} height={size} viewBox="0 0 40 40" fill="none" className="inline-block drop-shadow-md">
+                        {/* Arrière-plan */}
+                        {variant.item === 'hole' && <ellipse cx="20" cy="35" rx="15" ry="4" fill="#000" opacity="0.3" />}
+                        {variant.item === 'tree' && <g><rect x="2" y="20" width="4" height="15" fill="#78350F" /><circle cx="4" cy="20" r="8" fill="#16A34A" /></g>}
+                        {variant.item === 'house' && <path d="M5 20L20 8L35 20V38H5V20Z" fill="none" stroke="#000" strokeWidth="2" />}
+                        {/* Corps */}
+                        <path d="M8 26C8 30 12 34 18 34C24 34 32 32 32 27C32 23 28 22 26 22C26 22 28 16 31 16C32.5 16 34 14.5 34 12.5C34 10.5 32.5 9 31 9C27.5 9 22.5 11.5 22.5 17.5C22.5 22 18 22 15 22C10 22 8 23.5 8 26Z" fill={color} stroke="black" strokeWidth="1.5" strokeLinejoin="round"/>
+                        {/* Vêtement */}
+                        {variant.item === 'dress' && <path d="M12 28C12 28 15 36 25 36C35 36 32 28 32 28" fill="#EC4899" stroke="black" strokeWidth="1" />}
+                        {/* Aile */}
+                        <path d="M16 27C16 27 19 25 23 27" stroke="black" strokeWidth="1.5" strokeLinecap="round" />
+                        {/* Arrière */}
+                        {variant.item === 'horns' && <><path d="M26 11L24 7" stroke="black" strokeWidth="2" /><path d="M34 11L36 7" stroke="black" strokeWidth="2" /></>}
+                        {variant.item === 'box' && <path d="M4 28H36V40H4V28Z" fill="#D97706" stroke="black" strokeWidth="1.5" />}
+                        {/* Yeux */}
+                        {variant.eye === 'normal' && <circle cx="30" cy="13" r="1.5" fill="black" />}
+                        {variant.eye === 'surprised' && <><circle cx="30" cy="13" r="3" fill="white" stroke="black" strokeWidth="0.5"/><circle cx="30" cy="13" r="1" fill="black" /></>}
+                        {variant.eye === 'determined' && <><path d="M28 12L31 13" stroke="black" strokeWidth="1"/><circle cx="30" cy="13" r="1.5" fill="black" /></>}
+                        {variant.eye === 'angry' && <path d="M28 12L32 14" stroke="black" strokeWidth="1.5"/>}
+                        {variant.eye === 'spiral' && <g transform="translate(30 13)"><path d="M0 0C1.5 0 2.5 1.5 1.5 2.5C0.5 3.5 -1.5 2.5 -1.5 1C-1.5 -0.5 -0.5 -1.5 1 -1.5" stroke="black" strokeWidth="1" fill="none" /></g>}
+                        {variant.eye === 'drunk' && <><circle cx="29" cy="13" r="1" fill="black" /><circle cx="32" cy="12" r="1" fill="black" /></>}
+                        {variant.eye === 'worry' && <><circle cx="30" cy="13" r="1.5" fill="black" /><path d="M28 10L32 11" stroke="black" strokeWidth="1" /></>}
+                        {variant.eye === 'suspicious' && <path d="M28 13H32" stroke="black" strokeWidth="2" />}
+                        {variant.eye === 'dollar' && <text x="27" y="15" fontSize="6" fontWeight="bold" fill="green">$</text>}
+                        {variant.eye === 'fabulous' && <path d="M28 12Q30 10 32 12" stroke="black" strokeWidth="1" fill="none" />}
+                        {variant.eye === 'shy' && <path d="M28 14L32 14" stroke="black" strokeWidth="1" />}
+                        {variant.eye === 'yell' && <circle cx="30" cy="13" r="1" fill="black" />}
+                        {variant.eye === 'lashes' && <><circle cx="30" cy="13" r="1.5" fill="black" /><path d="M31 11L33 10M30 11L30 9" stroke="black" strokeWidth="0.5" /></>}
+                        {variant.eye === 'glasses' && <path d="M26 13H34" stroke="black" strokeWidth="3" strokeLinecap="round"/>}
+                        {variant.eye === 'cool' && <g><path d="M26 13H34" stroke="black" strokeWidth="4" /><path d="M26 13H34" stroke="black" strokeWidth="1" /></g>}
+                        {variant.eye === 'reading' && <g><circle cx="28" cy="13" r="2" stroke="black" fill="none" strokeWidth="0.5"/><circle cx="32" cy="13" r="2" stroke="black" fill="none" strokeWidth="0.5"/><path d="M30 13H30" stroke="black" strokeWidth="0.5"/></g>}
+                        {/* Bouche */}
+                        {variant.eye === 'yell' ? <circle cx="34" cy="16" r="3" fill="black" /> : <path d="M34 13.5C35.5 13.5 37 14 37 15C37 16 33 16.5 32 16" stroke="#EA580C" strokeWidth="2" strokeLinecap="round" />}
+                        {/* Avant */}
+                        {variant.item === 'headband' && <path d="M25 10H35" stroke="#EF4444" strokeWidth="2" strokeLinecap="round"/>}
+                        {variant.item === 'hat' && <path d="M22 9L30 -2L38 9H22Z" fill="#6366F1" stroke="black" strokeWidth="1"/>}
+                        {variant.item === 'bicorne' && <path d="M20 10L24 4L36 4L40 10L30 8L20 10Z" fill="#1E293B" stroke="black" strokeWidth="1"/>}
+                        {variant.item === 'piano' && <g transform="translate(14, 26) rotate(-10)"><rect width="16" height="6" fill="white" stroke="black" strokeWidth="1"/><rect x="2" width="2" height="3" fill="black"/><rect x="6" width="2" height="3" fill="black"/><rect x="10" width="2" height="3" fill="black"/><rect x="12" width="2" height="3" fill="black"/></g>}
+                        {variant.item === 'swirl' && <path d="M20 6C18 4 16 6 18 8" stroke="black" strokeWidth="1" strokeDasharray="2 2"/>}
+                        {variant.item === 'bottle' && <g transform="translate(5, 20)"><rect width="6" height="10" fill="#D97706" stroke="black" /><rect x="2" y="-3" width="2" height="3" fill="#D97706" stroke="black" /></g>}
+                        {variant.item === 'cards' && <g transform="translate(5, 25)"><rect width="6" height="8" fill="white" stroke="black" transform="rotate(-20)" /><rect width="6" height="8" fill="white" stroke="black" x="4" /><rect width="6" height="8" fill="white" stroke="black" x="8" transform="rotate(20)" /></g>}
+                        {variant.item === 'money' && <circle cx="10" cy="30" r="5" fill="#FBBF24" stroke="black" />}
+                        {variant.item === 'wig' && <path d="M25 10C20 5 35 0 40 10" stroke="#EC4899" strokeWidth="6" strokeLinecap="round" />}
+                        {variant.item === 'sweat' && <path d="M35 8Q35 12 37 10" stroke="#0EA5E9" strokeWidth="1.5" fill="none" />}
+                        {variant.item === 'fist' && <g transform="translate(10, 15)"><circle r="4" fill="#FACC15" stroke="black" /><path d="M0 4L0 15" stroke="black" strokeWidth="2" /></g>}
+                        {variant.item === 'knife' && <g transform="translate(5, 25) rotate(-45)"><rect width="12" height="3" fill="#94A3B8" stroke="black" /><rect width="4" height="3" fill="#475569" stroke="black" /></g>}
+                        {variant.item === 'book' && <rect x="10" y="30" width="14" height="8" fill="#3B82F6" stroke="black" />}
+                        {variant.item === 'ruler' && <rect x="5" y="25" width="20" height="4" fill="#FBBF24" stroke="black" transform="rotate(-30)" />}
+                        {variant.item === 'moto' && <path d="M10 30L20 28L30 30" stroke="black" strokeWidth="2" fill="none" />}
+                        {variant.item === 'wand_smoke' && <g><line x1="5" y1="35" x2="15" y2="25" stroke="#7C3AED" strokeWidth="2" /><circle cx="17" cy="23" r="2" fill="#A855F7" opacity="0.6" /><circle cx="19" cy="21" r="3" fill="#A855F7" opacity="0.4" /></g>}
+                    </svg>
+                );
+            };
+
+            const DuckIcon = ({ size = 24 }) => (
+                <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className="inline-block">
+                    <path d="M5 16C5 18.5 7.5 20.5 11 20.5C14.5 20.5 19 19.5 19 16.5C19 14.5 17 13.5 15.5 13.5C15.5 13.5 16.5 10 18.5 10C19.6046 10 20.5 9.10457 20.5 8C20.5 6.89543 19.6046 6 18.5 6C16.5 6 13.5 7.5 13.5 11C13.5 13.5 11 13.5 9 13.5C6 13.5 5 14.5 5 16Z" fill="#FACC15" stroke="#CA8A04" strokeWidth="1.5" strokeLinejoin="round"/>
+                    <circle cx="18" cy="8.5" r="1" fill="black" />
+                    <path d="M20.5 8.5C21.5 8.5 22.5 9 22.5 9.5C22.5 10 20 10.5 19.5 10" stroke="#EA580C" strokeWidth="1.5" strokeLinecap="round" />
+                    <path d="M10 16.5C10 16.5 12 15.5 14 16.5" stroke="#CA8A04" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+            );
+
+            // --- FONCTION UTILS ---
+            const showNotif = (msg, type = 'info', setNotification) => {
+                setNotification({ msg, type });
+                setTimeout(() => setNotification(null), 4000);
+            };
+
+            const compressImage = (file) => {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.readAsDataURL(file);
+                    reader.onload = (event) => {
+                    const img = new Image();
+                    img.src = event.target.result;
+                    img.onload = () => {
+                        try {
+                        const canvas = document.createElement('canvas');
+                        const MAX_SIZE = 600; 
+                        let width = img.width;
+                        let height = img.height;
+                        if (width > height) {
+                            if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; }
+                        } else {
+                            if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; }
+                        }
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+                        resolve(canvas.toDataURL('image/jpeg', 0.7));
+                        } catch (err) { reject(new Error("Erreur compression : " + err.message)); }
+                    }
+                    img.onerror = () => reject(new Error("Image invalide"));
+                    }
+                    reader.onerror = () => reject(new Error("Lecture fichier impossible"));
+                });
+            };
+
+            // --- SOUS-COMPOSANTS ---
+            
+            function ShopSection({ rewards, userData, handleBuy, isDaddyDuck, appId, db, showNotif }) {
+                const [newReward, setNewReward] = React.useState({ name: '', cost: '', iconKey: 'gift' });
+
+                const handleAddReward = async (e) => {
+                    e.preventDefault();
+                    if (!newReward.name || !newReward.cost) return;
+                    try {
+                        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'rewards'), {
+                            name: newReward.name,
+                            cost: parseInt(newReward.cost),
+                            iconKey: newReward.iconKey
+                        });
+                        setNewReward({ name: '', cost: '', iconKey: 'gift' });
+                        showNotif("Récompense ajoutée !", "success");
+                    } catch (e) { showNotif("Erreur ajout.", "error"); }
+                };
+
+                const handleDeleteReward = async (id) => {
+                    try {
+                        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rewards', id));
+                        showNotif("Supprimé.", "success");
+                    } catch(e) { showNotif("Erreur suppression.", "error"); }
+                };
+
+                return (
+                    <div className="space-y-4">
+                        <h2 className="text-2xl font-bold px-2">La Boutique</h2>
+                        
+                        {isDaddyDuck && (
+                            <div className="bg-white p-4 rounded-2xl shadow-sm border border-yellow-200 mb-6">
+                                <h3 className="font-bold text-sm text-yellow-800 mb-2 flex items-center gap-2"><Icons.Plus size={16}/> Ajouter un article</h3>
+                                <form onSubmit={handleAddReward} className="space-y-3">
+                                    <input className="w-full border border-gray-300 rounded p-2 text-sm" placeholder="Nom de l'article" value={newReward.name} onChange={e => setNewReward({...newReward, name: e.target.value})} />
+                                    <div className="flex gap-2">
+                                        <input type="number" className="w-1/3 border border-gray-300 rounded p-2 text-sm" placeholder="Prix" value={newReward.cost} onChange={e => setNewReward({...newReward, cost: e.target.value})} />
+                                        <div className="w-2/3 relative">
+                                            <select className="w-full border border-gray-300 rounded p-2 text-sm appearance-none" value={newReward.iconKey} onChange={e => setNewReward({...newReward, iconKey: e.target.value})}>
+                                                {REWARD_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                                            </select>
+                                            <div className="absolute right-2 top-2 pointer-events-none text-gray-500">
+                                                {REWARD_ICONS[newReward.iconKey]}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button className="w-full bg-yellow-400 text-black font-bold py-2 rounded text-sm hover:bg-yellow-500">Ajouter</button>
+                                </form>
+                            </div>
+                        )}
+
+                        <div className="grid grid-cols-1 gap-4">
+                            {rewards.map(item => (
+                                <div key={item.id} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex justify-between items-center">
+                                    <div className="flex items-center gap-4">
+                                        <span className="text-3xl bg-gray-100 w-12 h-12 flex items-center justify-center rounded-full text-gray-600">
+                                            {REWARD_ICONS[item.iconKey] || <Icons.Gift />}
+                                        </span>
+                                        <div>
+                                            <h3 className="font-bold text-gray-800">{item.name}</h3>
+                                            <p className="text-yellow-600 font-bold text-sm flex items-center gap-1">{item.cost} <DuckIcon size={14} /></p>
+                                        </div>
+                                    </div>
+                                    {isDaddyDuck ? (
+                                        <button onClick={() => handleDeleteReward(item.id)} className="text-red-500 p-2 hover:bg-red-50 rounded"><Icons.Trash2 size={20} /></button>
+                                    ) : (
+                                        <button onClick={() => handleBuy(item)} disabled={userData?.points < item.cost} className={`px-4 py-2 rounded-lg font-bold text-sm ${userData?.points >= item.cost ? 'bg-black text-white' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>Acheter</button>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                );
+            }
+
+            function PBSection({ currentUser, isDaddyDuck, appId, db, showNotif }) {
+                const [selectedExercise, setSelectedExercise] = React.useState(EXERCISES_LIST[0]);
+                const [weightInput, setWeightInput] = React.useState('');
+                const [repsInput, setRepsInput] = React.useState('');
+                const [dateInput, setDateInput] = React.useState(new Date().toISOString().split('T')[0]);
+                const [history, setHistory] = React.useState([]);
+                const [spiderData, setSpiderData] = React.useState({});
+                const [usersList, setUsersList] = React.useState([]);
+                const [targetUser, setTargetUser] = React.useState(currentUser);
+
+                useEffect(() => {
+                    if (isDaddyDuck) {
+                        const qUsers = query(collection(db, 'artifacts', appId, 'public', 'data', 'users'));
+                        getDocs(qUsers).then(snapshot => {
+                            const list = snapshot.docs.map(d => d.data().name);
+                            setUsersList(list);
+                            if (list.length > 0 && targetUser === 'Daddy Duck') setTargetUser(list[0]);
+                        });
+                    } else { setTargetUser(currentUser); }
+                }, [isDaddyDuck, appId, db]);
+
+                useEffect(() => {
+                    if (!targetUser) return;
+                    const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'pbs'), where('userLowName', '==', targetUser.toLowerCase()));
+                    const unsub = onSnapshot(q, (snapshot) => {
+                        const all = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                        const byEx = {};
+                        EXERCISES_LIST.forEach(ex => byEx[ex] = 0);
+                        const grouped = {};
+                        all.forEach(p => { if (!grouped[p.exercise]) grouped[p.exercise] = []; grouped[p.exercise].push(p); });
+                        Object.keys(grouped).forEach(ex => {
+                            const sorted = grouped[ex].sort((a, b) => {
+                                const tA = a.recordDate ? new Date(a.recordDate).getTime() : (a.date?.seconds * 1000 || 0);
+                                const tB = b.recordDate ? new Date(b.recordDate).getTime() : (b.date?.seconds * 1000 || 0);
+                                return tB - tA;
+                            });
+                            if(sorted.length > 0) {
+                                const latest = sorted[0];
+                                byEx[ex] = latest.weight * (latest.reps || 1);
+                            }
+                        });
+                        setSpiderData(byEx);
+                        const filtered = all.filter(item => item.exercise === selectedExercise);
+                        filtered.sort((a, b) => {
+                            const tA = a.recordDate ? new Date(a.recordDate).getTime() : (a.date?.seconds * 1000 || 0);
+                            const tB = b.recordDate ? new Date(b.recordDate).getTime() : (b.date?.seconds * 1000 || 0);
+                            return tA - tB;
+                        });
+                        setHistory(filtered);
+                    });
+                    return () => unsub();
+                }, [selectedExercise, targetUser, appId, db]);
+
+                const handleAddPB = async (e) => {
+                    e.preventDefault();
+                    if (!weightInput || !repsInput || !dateInput) return;
+                    try {
+                        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'pbs'), {
+                            userLowName: currentUser.toLowerCase(),
+                            exercise: selectedExercise,
+                            weight: parseFloat(weightInput),
+                            reps: parseInt(repsInput),
+                            recordDate: dateInput,
+                            date: serverTimestamp()
+                        });
+                        setWeightInput(''); setRepsInput('');
+                        showNotif(`Record ajouté !`, "success");
+                    } catch (e) { showNotif("Erreur ajout.", "error"); }
+                };
+
+                const currentMax = history.length > 0 ? Math.max(...history.map(h => h.weight)) : 0;
+
+                return (
+                    <div className="space-y-6">
+                        <div className="flex items-center justify-between px-2">
+                            <h2 className="text-2xl font-bold flex items-center gap-2"><Icons.TrendingUp className="text-yellow-500"/> Stats</h2>
+                            {isDaddyDuck && (
+                                <select className="bg-white border border-yellow-300 rounded-lg p-2 text-sm font-bold" value={targetUser} onChange={(e) => setTargetUser(e.target.value)}>
+                                    {usersList.map(u => <option key={u} value={u}>{u}</option>)}
+                                </select>
+                            )}
+                        </div>
+                        <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+                            <h3 className="font-bold text-center mb-4 text-gray-800">{targetUser} mooved weight</h3>
+                            <div className="flex justify-center"><SpiderChart data={spiderData} /></div>
+                        </div>
+                        {!isDaddyDuck && (
+                            <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-4">
+                                <h3 className="font-bold text-sm text-gray-500 uppercase tracking-wide">Ajouter une perf</h3>
+                                <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-1">Exercice</label>
+                                    <select className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl" value={selectedExercise} onChange={(e) => setSelectedExercise(e.target.value)}>
+                                        {EXERCISES_LIST.map(ex => <option key={ex} value={ex}>{ex}</option>)}
+                                    </select>
+                                </div>
+                                <form onSubmit={handleAddPB} className="space-y-3">
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div><label className="block text-xs font-bold text-gray-500 mb-1">Poids (kg)</label><input type="number" step="0.5" placeholder="80" className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl" value={weightInput} onChange={(e) => setWeightInput(e.target.value)} /></div>
+                                        <div><label className="block text-xs font-bold text-gray-500 mb-1">Reps</label><input type="number" placeholder="5" className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl" value={repsInput} onChange={(e) => setRepsInput(e.target.value)} /></div>
+                                    </div>
+                                    <div><label className="block text-xs font-bold text-gray-500 mb-1">Date</label><input type="date" className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl" value={dateInput} onChange={(e) => setDateInput(e.target.value)} /></div>
+                                    <button className="w-full bg-black text-white font-bold p-3 rounded-xl">Ajouter</button>
+                                </form>
+                            </div>
+                        )}
+                        {isDaddyDuck && (
+                            <div className="bg-white p-4 rounded-xl shadow-sm">
+                                <label className="block text-xs font-bold text-gray-500 mb-1">Détail par exercice :</label>
+                                <select className="w-full p-2 bg-gray-50 border border-gray-200 rounded-lg font-bold" value={selectedExercise} onChange={(e) => setSelectedExercise(e.target.value)}>
+                                    {EXERCISES_LIST.map(ex => <option key={ex} value={ex}>{ex}</option>)}
+                                </select>
+                            </div>
+                        )}
+                        {history.length > 0 ? (
+                            <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+                                <div className="flex justify-between items-end mb-4">
+                                    <h3 className="font-bold text-gray-800 flex items-center gap-2">{selectedExercise}</h3>
+                                    <span className="text-2xl font-black text-yellow-500">Max: {currentMax}kg</span>
+                                </div>
+                                <ScatterChart data={history} />
+                                <div className="mt-4 space-y-2">
+                                    <p className="text-xs font-bold text-gray-400 uppercase">Derniers ajouts</p>
+                                    {history.slice().reverse().slice(0, 3).map(h => (
+                                        <div key={h.id} className="flex justify-between text-sm border-b border-gray-50 pb-1">
+                                            <span className="text-gray-500">{h.recordDate ? new Date(h.recordDate).toLocaleDateString() : 'Ancien'}</span>
+                                            <span className="font-bold">{h.weight}kg x {h.reps || 1}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="text-center py-8 text-gray-400 bg-white rounded-2xl border border-dashed border-gray-200">Aucune donnée pour {selectedExercise}.</div>
+                        )}
+                    </div>
+                );
+            }
+
+            // Charts & Graphs
+            function SpiderChart({ data }) {
+                const size = 300, center = size / 2, radius = 100, labels = EXERCISES_LIST;
+                const maxVal = Math.max(...Object.values(data), 100);
+                const getCoordinates = (val, i) => {
+                    const angle = (Math.PI * 2 * i) / labels.length - Math.PI / 2;
+                    const r = (val / maxVal) * radius;
+                    return { x: center + r * Math.cos(angle), y: center + r * Math.sin(angle) };
+                };
+                const getLabelCoordinates = (i) => {
+                    const angle = (Math.PI * 2 * i) / labels.length - Math.PI / 2;
+                    const r = radius + 25;
+                    return { x: center + r * Math.cos(angle), y: center + r * Math.sin(angle) };
+                };
+                const points = labels.map((l, i) => { const c = getCoordinates(data[l] || 0, i); return `${c.x},${c.y}`; }).join(' ');
+                const levels = [0.25, 0.5, 0.75, 1];
+                return (
+                    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+                        {levels.map(l => <polygon key={l} points={labels.map((_, i) => { const a = (Math.PI * 2 * i) / labels.length - Math.PI / 2; const r = radius * l; return `${center + r * Math.cos(a)},${center + r * Math.sin(a)}`; }).join(' ')} fill="none" stroke="#e5e7eb" strokeWidth="1" />)}
+                        {labels.map((_, i) => { const a = (Math.PI * 2 * i) / labels.length - Math.PI / 2; return <line key={i} x1={center} y1={center} x2={center + radius * Math.cos(a)} y2={center + radius * Math.sin(a)} stroke="#e5e7eb" strokeWidth="1" />; })}
+                        <polygon points={points} fill="rgba(250, 204, 21, 0.5)" stroke="#FACC15" strokeWidth="2" />
+                        <g transform={`translate(${center - 12}, ${center - 12})`}><path d="M5 16C5 18.5 7.5 20.5 11 20.5C14.5 20.5 19 19.5 19 16.5C19 14.5 17 13.5 15.5 13.5C15.5 13.5 16.5 10 18.5 10C19.6046 10 20.5 9.10457 20.5 8C20.5 6.89543 19.6046 6 18.5 6C16.5 6 13.5 7.5 13.5 11C13.5 13.5 11 13.5 9 13.5C6 13.5 5 14.5 5 16Z" fill="#FACC15" stroke="#CA8A04" strokeWidth="1.5" strokeLinejoin="round"/><circle cx="18" cy="8.5" r="1" fill="black" /><path d="M20.5 8.5C21.5 8.5 22.5 9 22.5 9.5C22.5 10 20 10.5 19.5 10" stroke="#EA580C" strokeWidth="1.5" strokeLinecap="round" /><path d="M10 16.5C10 16.5 12 15.5 14 16.5" stroke="#CA8A04" strokeWidth="1.5" strokeLinecap="round" /></g>
+                        {labels.map((l, i) => { const c = getLabelCoordinates(i); return <text key={i} x={c.x} y={c.y} textAnchor="middle" dominantBaseline="middle" className="text-[10px] fill-gray-500 font-bold">{l.split(' ')[0].substring(0, 8)}</text>; })}
+                    </svg>
+                );
+            }
+
+            function ScatterChart({ data }) {
+                const height = 200, width = 300, padding = 25, MAX_REPS = 20, MAX_WEIGHT = 200;
+                const getX = (r) => padding + ((r || 0) / MAX_REPS) * (width - 2 * padding);
+                const getY = (w) => height - padding - ((w || 0) / MAX_WEIGHT) * (height - 2 * padding);
+                const points = data.map(d => `${getX(d.reps || 1)},${getY(d.weight)}`).join(' ');
+                return (
+                    <div className="w-full overflow-hidden bg-gray-50 rounded-lg border border-gray-100 relative">
+                        <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto">
+                            {[0, 50, 100, 150, 200].map(w => <line key={w} x1={padding} y1={getY(w)} x2={width-padding} y2={getY(w)} stroke="#e5e7eb" strokeWidth="1" />)}
+                            {[0, 5, 10, 15, 20].map(r => <line key={r} x1={getX(r)} y1={padding} x2={getX(r)} y2={height-padding} stroke="#e5e7eb" strokeWidth="1" />)}
+                            <text x={width/2} y={height - 5} textAnchor="middle" fontSize="10" fill="#9ca3af">Répétitions</text>
+                            <text x={5} y={height/2} textAnchor="middle" fontSize="10" fill="#9ca3af" transform={`rotate(-90, 5, ${height/2})`}>Poids</text>
+                            {data.length > 1 && <polyline points={points} fill="none" stroke="#FACC15" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" strokeOpacity="0.5" />}
+                            {data.map((d, i) => <circle key={i} cx={getX(d.reps || 1)} cy={getY(d.weight)} r="4" fill="#FACC15" stroke="black" strokeWidth="1"><title>{d.weight}kg x {d.reps || 1}</title></circle>)}
+                        </svg>
+                    </div>
+                );
+            }
+
+            function Leaderboard({ appId, db, isDaddyDuck, showNotif }) {
+                const [users, setUsers] = React.useState([]);
+                useEffect(() => {
+                    const q = collection(db, 'artifacts', appId, 'public', 'data', 'users');
+                    const unsub = onSnapshot(q, (snapshot) => {
+                        const u = snapshot.docs.map(d => d.data());
+                        u.sort((a, b) => (b.totalWorkouts || 0) - (a.totalWorkouts || 0));
+                        setUsers(u);
+                    });
+                    return () => unsub();
+                }, [appId, db]);
+                const handleResetUser = async (userName) => {
+                    const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', userName.toLowerCase());
+                    await updateDoc(userRef, { points: 0, weeklyWorkouts: 0 });
+                    showNotif && showNotif(`Points de ${userName} reset.`, "warning");
+                }
+                return (
+                    <div className="space-y-4">
+                        <h2 className="text-2xl font-bold px-2">Classement (Séances)</h2>
+                        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                            {users.map((u, index) => (
+                                <div key={u.name} className={`flex items-center justify-between p-4 border-b border-gray-100 last:border-0 ${index === 0 ? 'bg-yellow-50' : ''}`}>
+                                    <div className="flex items-center gap-4">
+                                        <span className={`font-bold w-6 text-center ${index < 3 ? 'text-yellow-600' : 'text-gray-400'}`}>{index + 1}</span>
+                                        <div className="flex items-center gap-3">
+                                            <DuckAvatar id={u.avatarId || 'classic'} size={32} />
+                                            <div><p className="font-bold text-gray-800">{u.name}</p><p className="text-xs text-gray-500 font-bold">{u.totalWorkouts || 0} entraînements</p></div>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <span className="font-medium text-sm text-yellow-600 flex items-center gap-1">{u.points} <DuckIcon size={14} /></span>
+                                        {isDaddyDuck && <button onClick={() => handleResetUser(u.name)} className="text-xs text-red-500 border border-red-200 px-2 py-1 rounded">Reset</button>}
+                                    </div>
+                                </div>
+                            ))}
+                            {users.length === 0 && <div className="p-4 text-center text-gray-400">Aucun athlète.</div>}
+                        </div>
+                    </div>
+                );
+            }
+
+            // Boutons de navigation
+            function NavButton({ active, onClick, icon, label }) {
+                return <button onClick={onClick} className={`flex flex-col items-center gap-1 ${active ? 'text-yellow-500' : 'text-gray-400'}`}>{React.cloneElement(icon, { size: 24, strokeWidth: active ? 2.5 : 2 })}<span className="text-xs font-medium">{label}</span></button>;
+            }
+
+            // --- USEEFFECT PRINCIPAL ---
+            useEffect(() => {
+                const initAuth = async () => {
+                    if (window.firebaseModules && window.firebaseModules.signInAnonymously) {
+                        try {
+                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                                await window.firebaseModules.signInWithCustomToken(auth, __initial_auth_token);
+                            } else {
+                                await window.firebaseModules.signInAnonymously(auth);
+                            }
+                        } catch (error) { console.error("Auth Error", error); }
+                    }
+                };
+                if(auth) {
+                    initAuth();
+                    const unsubscribe = window.firebaseModules.onAuthStateChanged(auth, (u) => {
+                        setUser(u);
+                        setLoading(false);
+                    });
+                    return () => unsubscribe();
+                }
+            }, [auth]);
+
+            useEffect(() => {
+                if (!isDaddyDuck || !user) return;
+                setAdminError(null);
+                const qValidations = query(collection(db, 'artifacts', appId, 'public', 'data', 'validations'), where('status', '==', 'pending'));
+                const unsubVal = onSnapshot(qValidations, (snapshot) => {
+                    const vals = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                    vals.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
+                    setPendingValidations(vals);
+                }, (error) => setAdminError("Erreur connexion validations"));
+                const qDeliveries = query(collection(db, 'artifacts', appId, 'public', 'data', 'purchases'), where('status', '==', 'pending'));
+                const unsubDel = onSnapshot(qDeliveries, (snapshot) => {
+                    const dels = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                    dels.sort((a, b) => (a.timestamp?.seconds || 0) - (b.timestamp?.seconds || 0));
+                    setPendingDeliveries(dels);
+                });
+                return () => { unsubVal(); unsubDel(); };
+            }, [isDaddyDuck, appId, user]);
+
+            useEffect(() => {
+                if (!user || !username) return;
+                const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'users', username.toLowerCase());
+                const unsubUser = onSnapshot(userRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+                        setUserData(data);
+                        if (!data.avatarId && username.toLowerCase() !== 'daddy duck') setShowAvatarSelector(true);
+                        checkStreakLogic(userRef, data).catch(console.error);
+                    } else {
+                        const newUser = { name: username, points: 0, totalWorkouts: 0, weeklyWorkouts: 0, lastWorkout: null, joinedAt: serverTimestamp(), avatarId: 'classic' };
+                        setDoc(userRef, newUser).catch(console.error);
+                        setShowAvatarSelector(true);
+                    }
+                });
+                const qMyPurchases = query(collection(db, 'artifacts', appId, 'public', 'data', 'purchases'), where('userLowName', '==', username.toLowerCase()), where('status', '==', 'pending'));
+                const unsubMyPurchases = onSnapshot(qMyPurchases, (snapshot) => {
+                    const p = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                    setMyPurchases(p);
+                });
+                return () => { unsubUser(); unsubMyPurchases(); };
+            }, [user, username]);
+
+            return (
+                <div className="min-h-screen bg-gray-50 pb-24 relative font-sans">
+                    {notification && (
+                        <div className={`fixed top-4 left-4 right-4 z-50 p-4 rounded-xl shadow-lg animate-bounce-in text-white font-bold flex items-center gap-3 ${
+                            notification.type === 'error' ? 'bg-red-500' : notification.type === 'success' ? 'bg-green-600' : notification.type === 'warning' ? 'bg-orange-500' : 'bg-blue-600'
+                        }`}>
+                            {notification.type === 'error' ? <Icons.AlertTriangle /> : <Icons.Info />} {notification.msg}
+                        </div>
+                    )}
+
+                    {!username && (
+                        <div className="min-h-screen bg-yellow-400 flex flex-col items-center justify-center p-4">
+                            <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md text-center">
+                                <div className="flex justify-center mb-4"><DuckIcon size={64} /></div>
+                                <h1 className="text-3xl font-bold text-gray-800 mb-2">Duck Training</h1>
+                                <div className="bg-yellow-50 p-4 rounded-xl text-left text-sm text-yellow-900 mb-6 space-y-2 border border-yellow-200">
+                                    <h3 className="font-bold text-center mb-2">🦆 Les Règles du Jeu</h3>
+                                    <ul className="space-y-1 list-disc list-inside">
+                                        <li>Valide ta séance avec une photo = <strong>+1 Canard</strong>.</li>
+                                        <li>Maximum <strong>3 Canards</strong> par semaine.</li>
+                                        <li>Accumule des canards pour acheter des vrais cadeaux !</li>
+                                        <li className="text-red-600 font-bold">Attention : Si tu rates une semaine, tu perds TOUT !</li>
+                                    </ul>
+                                </div>
+                                <p className="text-gray-500 mb-6">Entre ton prénom pour commencer.</p>
+                                <form onSubmit={handleLogin} className="space-y-4">
+                                    <input type="text" name="name" placeholder="Ton Prénom" className="w-full p-4 border-2 border-yellow-200 rounded-xl text-lg focus:outline-none focus:border-yellow-500 transition" required />
+                                    <button type="submit" className="w-full bg-black text-white py-4 rounded-xl font-bold text-lg hover:bg-gray-800 transition">Entrer</button>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {username && showAvatarSelector && !isDaddyDuck && (
+                        <div className="fixed inset-0 bg-yellow-400 z-50 flex flex-col items-center justify-center p-4 overflow-y-auto">
+                            <div className="bg-white p-6 rounded-3xl shadow-2xl w-full max-w-lg text-center my-auto">
+                                <h2 className="text-2xl font-black text-gray-800 mb-2">Quelle est ta personnalité de canard ?</h2>
+                                <p className="text-gray-500 mb-6">Choisis celui qui te correspond le mieux !</p>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                                    {Object.entries(DUCK_VARIANTS).map(([key, variant]) => (
+                                        <button key={key} onClick={() => handleSelectAvatar(key)} className="flex flex-col items-center p-4 rounded-xl border-2 border-gray-100 hover:border-yellow-400 hover:bg-yellow-50 transition transform hover:scale-105">
+                                            <DuckAvatar id={key} size={60} />
+                                            <span className="font-bold text-sm mt-2 text-gray-700">{variant.name}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {username && (
+                        <>
+                            <div className="bg-yellow-400 p-6 rounded-b-3xl shadow-lg sticky top-0 z-10">
+                                <div className="flex justify-between items-center mb-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="bg-white p-1 rounded-full shadow-sm cursor-pointer" onClick={() => !isDaddyDuck && setShowAvatarSelector(true)}>
+                                            <DuckAvatar id={userData?.avatarId || 'classic'} size={40} />
+                                        </div>
+                                        <button onClick={() => !isDaddyDuck && setShowAvatarSelector(true)} className="flex items-center gap-2">
+                                            <span className="font-bold text-lg">{username}</span>
+                                            {!isDaddyDuck && <Icons.Edit2 size={14} className="text-black/30 hover:text-black"/>}
+                                        </button>
+                                    </div>
+                                    <button onClick={() => setUsername('')} className="text-sm font-semibold underline text-black/60"><Icons.LogOut size={16} /></button>
+                                </div>
+                                {!isDaddyDuck && userData ? (
+                                    <div>
+                                        <div className="flex justify-between items-end text-white">
+                                            <div><p className="text-yellow-900 font-medium opacity-80">Mes Duck Points</p><div className="flex items-center gap-2 text-4xl font-black text-black"><DuckIcon size={32} /> {userData.points}</div></div>
+                                            <div className="text-right text-yellow-900"><p className="text-sm font-bold">Semaine : {userData.weeklyWorkouts}/3</p><div className="w-24 h-2 bg-yellow-600/30 rounded-full mt-1 overflow-hidden"><div className="h-full bg-black transition-all duration-500" style={{ width: `${Math.min((userData.weeklyWorkouts / 3) * 100, 100)}%` }}></div></div></div>
+                                        </div>
+                                        {myPurchases.length > 0 && <div className="mt-4 bg-yellow-500/20 p-3 rounded-lg border border-yellow-600/30"><p className="text-xs font-bold text-yellow-900 uppercase tracking-wide mb-1 flex items-center gap-1"><Icons.Package size={12}/> Lots en attente de livraison</p><div className="flex flex-wrap gap-2">{myPurchases.map(p => <span key={p.id} className="bg-white px-2 py-1 rounded text-xs font-bold shadow-sm">{p.itemName}</span>)}</div></div>}
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-2"><h2 className="text-xl font-bold flex justify-center items-center gap-2"><DuckIcon /> Interface Daddy Duck</h2></div>
+                                )}
+                            </div>
+
+                            <div className="p-4 max-w-md mx-auto space-y-6 mt-4">
+                                {isDaddyDuck && activeTab === 'admin' && (
+                                    <div className="space-y-8">
+                                        <div className="space-y-4">
+                                            <h3 className="font-bold text-lg text-gray-700 flex items-center gap-2"><Icons.Package className="text-blue-600" /> Livraisons à faire ({pendingDeliveries.length})</h3>
+                                            {pendingDeliveries.length === 0 ? <p className="text-gray-400 text-sm italic">Aucune livraison en attente.</p> : <div className="space-y-2">{pendingDeliveries.map(p => <div key={p.id} className="bg-blue-50 p-4 rounded-xl border border-blue-100 flex justify-between items-center relative">{processingId === p.id && <div className="absolute inset-0 bg-white/50 z-10" />}<div><p className="font-bold text-gray-800">{p.userName}</p><p className="text-sm text-blue-700">Doit recevoir : <strong>{p.itemName}</strong></p></div><button onClick={() => handleDeliverItem(p)} className="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-bold shadow hover:bg-blue-700">Livré !</button></div>)}</div>}
+                                        </div>
+                                        <hr className="border-gray-200" />
+                                        <div className="space-y-4">
+                                            <h3 className="font-bold text-lg text-gray-700 flex items-center gap-2"><Icons.Clock className="text-yellow-600" /> Photos à valider ({pendingValidations.length})</h3>
+                                            {pendingValidations.length === 0 ? <p className="text-gray-400 text-sm italic">Aucune photo en attente.</p> : <div className="space-y-4">{pendingValidations.map(val => <div key={val.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 relative">{processingId === val.id && <div className="absolute inset-0 bg-white/80 z-10 flex items-center justify-center rounded-xl"><Icons.Loader className="animate-spin text-yellow-500" size={32} /></div>}<div className="flex justify-between items-start mb-3"><div className="flex items-center gap-2"><DuckAvatar id={val.userAvatar || 'classic'} size={32} /><span className="font-bold text-lg">{val.userName}</span></div><span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded">{val.timestamp ? new Date(val.timestamp.seconds * 1000).toLocaleTimeString() : '...'}</span></div><div className="rounded-lg overflow-hidden bg-black aspect-video mb-4 flex justify-center items-center"><img src={val.photoBase64} alt="Preuve" className="max-h-full max-w-full object-contain" /></div><div className="grid grid-cols-2 gap-3"><button onClick={() => handleRejectWorkout(val)} disabled={!!processingId} className="flex items-center justify-center gap-2 py-3 rounded-lg border border-red-200 text-red-600 font-bold hover:bg-red-50 disabled:opacity-50"><Icons.XCircle size={20} /> Refuser</button><button onClick={() => handleValidateWorkout(val)} disabled={!!processingId} className="flex items-center justify-center gap-2 py-3 rounded-lg bg-yellow-400 text-black font-bold hover:bg-yellow-500 disabled:opacity-50"><Icons.CheckCircle size={20} /> Valider</button></div></div>)}</div>}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {!isDaddyDuck && activeTab === 'home' && (
+                                    <div className="space-y-6">
+                                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                                            <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Icons.Camera className="text-yellow-500" /> Gagner un canard</h2>
+                                            {!photoPreview ? (
+                                                <div className={`border-2 border-dashed rounded-xl p-8 text-center transition relative ${isCompressing ? 'bg-gray-50 border-gray-200' : 'border-gray-300 hover:bg-gray-50 cursor-pointer'}`}>
+                                                    <input type="file" accept="image/*" ref={fileInputRef} onChange={handlePhotoSelect} disabled={isCompressing} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full disabled:cursor-not-allowed" />
+                                                    {isCompressing ? <div className="flex flex-col items-center justify-center text-yellow-600"><Icons.Loader className="animate-spin mb-2" /><p className="font-bold text-sm">Préparation...</p></div> : <><Icons.Camera className="mx-auto text-gray-400 mb-2" size={32} /><p className="text-gray-500 font-medium">Prends ta photo</p><p className="text-xs text-gray-400 mt-1">Daddy Duck validera</p></>}
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-4">
+                                                    <div className="relative rounded-xl overflow-hidden aspect-video bg-black flex justify-center"><img src={photoPreview} alt="Preuve" className="h-full object-contain" />{!isSending && <button onClick={() => setPhotoPreview(null)} className="absolute top-2 right-2 bg-white/80 p-1 rounded-full text-red-500"><Icons.Trash2 size={16} /></button>}</div>
+                                                    <button onClick={handleSubmitValidation} disabled={isSending || !userData} className={`w-full font-bold py-3 rounded-xl shadow-md flex justify-center items-center gap-2 transition ${isSending || !userData ? 'bg-gray-200 text-gray-400 cursor-wait' : 'bg-yellow-400 hover:bg-yellow-500 text-black transform active:scale-95'}`}>{isSending ? <><Icons.Loader className="animate-spin" size={18} /> Envoi...</> : <><Icons.CheckCircle size={18}/> Envoyer</>}</button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {activeTab === 'shop' && <ShopSection rewards={rewards} userData={userData} handleBuy={handleBuy} isDaddyDuck={isDaddyDuck} appId={appId} db={db} showNotif={(m, t) => showNotif(m, t, setNotification)} />}
+                                {activeTab === 'pbs' && <PBSection currentUser={username} isDaddyDuck={isDaddyDuck} appId={appId} db={db} showNotif={(m, t) => showNotif(m, t, setNotification)} />}
+                                {(activeTab === 'leader' || (isDaddyDuck && activeTab !== 'admin')) && <Leaderboard appId={appId} db={db} isDaddyDuck={isDaddyDuck} showNotif={(m, t) => showNotif(m, t, setNotification)} />}
+                            </div>
+
+                            <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 flex justify-around items-center z-20 pb-safe">
+                                {isDaddyDuck ? (
+                                    <>
+                                        <NavButton active={activeTab === 'admin'} onClick={() => setActiveTab('admin')} icon={<Icons.CheckCircle />} label="Admin" />
+                                        <NavButton active={activeTab === 'pbs'} onClick={() => setActiveTab('pbs')} icon={<Icons.TrendingUp />} label="Stats" />
+                                        <NavButton active={activeTab === 'shop'} onClick={() => setActiveTab('shop')} icon={<Icons.ShoppingBag />} label="Boutique" />
+                                        <NavButton active={activeTab === 'leader'} onClick={() => setActiveTab('leader')} icon={<Icons.Trophy />} label="Classmt" />
+                                    </>
+                                ) : (
+                                    <>
+                                        <NavButton active={activeTab === 'home'} onClick={() => setActiveTab('home')} icon={<Icons.Activity />} label="Training" />
+                                        <NavButton active={activeTab === 'pbs'} onClick={() => setActiveTab('pbs')} icon={<Icons.TrendingUp />} label="Progrès" />
+                                        <NavButton active={activeTab === 'shop'} onClick={() => setActiveTab('shop')} icon={<Icons.ShoppingBag />} label="Boutique" />
+                                        <NavButton active={activeTab === 'leader'} onClick={() => setActiveTab('leader')} icon={<Icons.Trophy />} label="Top" />
+                                    </>
+                                )}
+                            </div>
+                        </>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<Main />);
+    </script>
+</body>
+</html>
