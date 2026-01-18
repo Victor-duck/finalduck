@@ -101,14 +101,14 @@
             // REMPLACEZ LES VALEURS CI-DESSOUS PAR VOS CLÉS FIREBASE
             // ===============================================================
             const firebaseConfig = {
-                apiKey: "VOTRE_API_KEY_ICI",
-                authDomain: "VOTRE_PROJET.firebaseapp.com",
-                projectId: "VOTRE_PROJET",
-                storageBucket: "VOTRE_PROJET.appspot.com",
-                messagingSenderId: "...",
-                appId: "..."
-            };
-            const appId = 'gym-duck-tracker-v1';
+  apiKey: "AIzaSyDfMT_0E2_D_Pq1Lu93y3BpFPa2Mh25Z3c",
+  authDomain: "duck-gym.firebaseapp.com",
+  projectId: "duck-gym",
+  storageBucket: "duck-gym.firebasestorage.app",
+  messagingSenderId: "925726427622",
+  appId: "1:925726427622:web:e730e1cc87a91ecc102e27",
+  measurementId: "G-H3BMWZ9VGL"
+}
             // ===============================================================
 
             // États globaux pour Firebase
